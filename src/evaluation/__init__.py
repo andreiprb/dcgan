@@ -1,3 +1,3 @@
-from ._core import Evaluator, FIDCalculator, SSIMCalculator
+from ._evaluation import Evaluator, FIDCalculator, SSIMCalculator, TrainingMonitor
 
-__all__ = ['Evaluator', 'FIDCalculator', 'SSIMCalculator']
+__all__ = ['Evaluator', 'FIDCalculator', 'SSIMCalculator', 'TrainingMonitor']

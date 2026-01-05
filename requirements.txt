@@ -8,3 +8,7 @@ pyyaml
 tqdm
 Pillow
 ipykernel
+ipywidgets
+tqdm
+
+certifi
