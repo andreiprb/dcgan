@@ -1,16 +1,16 @@
 from typing import Literal
+import io
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from datasets import load_dataset
 from PIL import Image
-import io
 
 
 class StyleTransferDataset(Dataset):
     def __init__(
         self,
-        domain: Literal['photos', 'monet'],
+        domain: Literal['apple', 'orange'],
         split: Literal['train', 'val'] = 'train',
         image_size: int = 256,
         augment: bool | None = None,
@@ -20,15 +20,14 @@ class StyleTransferDataset(Dataset):
         self.image_size = image_size
         self.augment = augment if augment is not None else (split == 'train')
 
-        self.column = 'imageA' if domain == 'monet' else 'imageB'
+        self.column = 'imageA' if domain == 'apple' else 'imageB'
 
         hf_split = 'train' if split == 'train' else 'test'
 
         print(f"Loading {self.domain} ({self.column}) from HuggingFace...")
         self.dataset = load_dataset(
-            "huggan/monet2photo",
+            "huggan/apple2orange",
             split=hf_split,
-            trust_remote_code=True,
         )
         print(f"Loaded {len(self.dataset)} images for {hf_split} split.")
 
@@ -84,9 +83,8 @@ class PairedDataset(Dataset):
 
         print(f"Loading paired dataset from HuggingFace...")
         self.dataset = load_dataset(
-            "huggan/monet2photo",
+            "huggan/apple2orange",
             split=hf_split,
-            trust_remote_code=True,
         )
         print(f"Loaded {len(self.dataset)} pairs for {hf_split} split.")
 
@@ -120,23 +118,24 @@ class PairedDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         row = self.dataset[idx]
 
-        photo = Image.open(io.BytesIO(row['imageB']['bytes']))
-        monet = Image.open(io.BytesIO(row['imageA']['bytes']))
+        apple = Image.open(io.BytesIO(row['imageA']['bytes']))
+        orange = Image.open(io.BytesIO(row['imageB']['bytes']))
 
-        if photo.mode != 'RGB':
-            photo = photo.convert('RGB')
-        if monet.mode != 'RGB':
-            monet = monet.convert('RGB')
+        if apple.mode != 'RGB':
+            apple = apple.convert('RGB')
+        if orange.mode != 'RGB':
+            orange = orange.convert('RGB')
 
-        return self.transform(photo), self.transform(monet)
+        return self.transform(apple), self.transform(orange)
 
 
 def get_dataloaders(
-    domain: Literal['photos', 'monet'] | None = None,
+    domain: Literal['apple', 'orange'] | None = None,
     batch_size: int = 4,
     num_workers: int = 4,
     image_size: int = 256,
     paired: bool = False,
+    preload: bool = False,
 ) -> dict[str, DataLoader]:
     dataloaders = {}
 
@@ -155,13 +154,29 @@ def get_dataloaders(
                 image_size=image_size,
             )
 
-        dataloaders[split] = DataLoader(
+        loader = DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=(split == 'train'),
             num_workers=num_workers,
-            pin_memory=True,
+            pin_memory=torch.cuda.is_available(),
             drop_last=(split == 'train'),
         )
+
+        if preload:
+            print(f"Preloading {domain} {split}...")
+            images = []
+            for batch in loader:
+                images.append(batch)
+            images = torch.cat(images, dim=0)
+            print(f"Preloaded {images.shape[0]} images")
+            loader = DataLoader(
+                torch.utils.data.TensorDataset(images),
+                batch_size=batch_size,
+                shuffle=(split == 'train'),
+                drop_last=(split == 'train'),
+            )
+
+        dataloaders[split] = loader
 
     return dataloaders
